@@ -1,0 +1,65 @@
+#!/bin/zsh
+
+#This script sends the Self Heal command to an advanced search of computers through the Jamf Pro API
+
+#authentication - you can fill in these lines and add your information if you don't want to be prompted interactively when the script runs
+#the jamfURL should be exactly what you type into the address bar to access Jamf (no slash at the end)
+jamfURL=
+jamfUsername=
+jamfPassword=
+ 
+if [ -z $jamfURL ]; then
+	echo "Please enter the Jamf Pro URL (with no slash at the end):"
+	read -r jamfURL
+fi 
+
+if [ -z $jamfUsername ]; then
+	echo "Please enter your Jamf Pro username:"
+	read -r jamfUsername
+fi 
+
+if [ -z $jamfPassword ]; then 
+	echo "Please enter the Jamf Pro password for account: $jamfUsername:"
+	read -r -s jamfPassword
+fi
+
+xpath() {
+    # the xpath tool changes in Big Sur 
+    if [[ $(sw_vers -buildVersion) > "20A" ]]; then
+        /usr/bin/xpath -e "$@"
+    else
+        /usr/bin/xpath "$@"
+    fi
+}
+
+#encoding credentials so they aren't sent in plaintext
+encodedCreds=$(printf "$jamfUsername:$jamfPassword" | iconv -t ISO-8859-1 | base64 -i -)
+echo "$encodedCreds"
+
+#using encoded credentials to get bearer token
+token=$(curl -s "${jamfURL}/api/v1/auth/token" -H "Authorization: Basic $encodedCreds" -X POST | plutil -extract token raw -)
+echo "$token"
+
+#setting field separator to newline
+IFS=$'\n'
+
+#search number - you can fill in the search number here if you don't want to be prompted
+searchNumber=
+if [ -z $searchNumber ]; then
+	echo "Please enter the number of the advanced computer search you want to send the command to:"
+	read -r searchNumber
+fi
+
+#looping through computers in advanced search
+computers=($(curl -s "${jamfURL}/JSSResource/advancedcomputersearches/id/$searchNumber" -H "Accept: application/xml" -H "Authorization: Bearer ${token}" -X GET | xpath "advanced_computer_search/computers/computer/id" 2>&1 > /dev/null | awk -F'</?id>' '{for(i=2;i<=NF;i++) print $i}'))
+	for computerID in "${computers[@]}"; do
+		#send the self heal command
+		curl -s "${jamfURL}/api/v1/jamf-management-framework/redeploy/$computerID" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -X POST 2>&1 > /dev/null
+		echo "Jamf Self Heal sent to computer number $computerID."
+	done
+
+#cleaning up
+curl -s -k "${jamfURL}/api/v1/auth/invalidate-token" -H "Authorization: Bearer ${token}" -X POST
+unset IFS
+
+echo "Complete. All computers in the advanced search have had the Jamf Self Heal command sent."
