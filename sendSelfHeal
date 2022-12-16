@@ -34,11 +34,11 @@ xpath() {
 
 #encoding credentials so they aren't sent in plaintext
 encodedCreds=$(printf "$jamfUsername:$jamfPassword" | iconv -t ISO-8859-1 | base64 -i -)
-echo "$encodedCreds"
+#echo "$encodedCreds"
 
 #using encoded credentials to get bearer token
 token=$(curl -s "${jamfURL}/api/v1/auth/token" -H "Authorization: Basic $encodedCreds" -X POST | plutil -extract token raw -)
-echo "$token"
+#echo "$token"
 
 #setting field separator to newline
 IFS=$'\n'
